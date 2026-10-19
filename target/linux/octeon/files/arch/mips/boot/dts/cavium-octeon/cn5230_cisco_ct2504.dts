@@ -1,0 +1,106 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Device tree source for Cisco AIR-CT2504-K9 wireless LAN controller
+ * (Cavium OCTEON CN5230C, 4 cores, 1 GiB DDR2, 32 MiB NOR, CompactFlash).
+ *
+ * Four front-panel GbE ports: SGMII interface 0, Marvell quad PHY on MDIO
+ * addresses 4-7.
+ */
+
+/include/ "octeon_3xxx.dtsi"
+
+/ {
+	compatible = "cisco,ct2504", "cavium,cn5230";
+	model = "Cisco AIR-CT2504-K9";
+
+	soc@0 {
+		uart0: serial@1180000000800 {
+			clock-frequency = <750000000>;
+		};
+
+		bootbus: bootbus@1180000000000 {
+			ranges = <0 0  0x0 0x1f400000  0xc00000>,
+				 <1 0  0x10000 0x30000000  0>,
+				 <2 0  0x0 0x12000000  0x10000>,
+				 <3 0  0x0 0x13000000  0x10000>,
+				 <4 0  0x0 0x1d020000  0x10000>,
+				 <5 0  0x0 0x1d040000  0x10000>,
+				 <6 0  0x0 0x1d050000  0x10000>,
+				 <7 0  0x10000 0x90000000  0>;
+
+			/* CompactFlash in true-IDE mode on CS2 (command) / CS3 (control) */
+			cf0: compact-flash@2,0 {
+				compatible = "cavium,ebt3000-compact-flash";
+				reg = <2 0 0x10000>, <3 0 0x10000>;
+				cavium,bus-width = <16>;
+				cavium,true-ide;
+				cavium,dma-engine-handle = <&dma0>;
+			};
+		};
+
+		twsi1: i2c@1180000001200 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "cavium,octeon-3860-twsi";
+			reg = <0x11800 0x00001200 0x0 0x200>;
+			interrupts = <0 59>;
+			clock-frequency = <100000>;
+
+			/* PoE for two ports: channels 1 and 2 are wired up */
+			poe@20 {
+				compatible = "ti,tps23861";
+				reg = <0x20>;
+				/* the vendor firmware also runs it in auto mode */
+				ti,operating-mode = "auto";
+			};
+		};
+
+		smi0: mdio@1180000001800 {
+			phy4: ethernet-phy@4 {
+				reg = <4>;
+				compatible = "ethernet-phy-ieee802.3-c22";
+			};
+			phy5: ethernet-phy@5 {
+				reg = <5>;
+				compatible = "ethernet-phy-ieee802.3-c22";
+			};
+			phy6: ethernet-phy@6 {
+				reg = <6>;
+				compatible = "ethernet-phy-ieee802.3-c22";
+			};
+			phy7: ethernet-phy@7 {
+				reg = <7>;
+				compatible = "ethernet-phy-ieee802.3-c22";
+			};
+		};
+
+		pip: pip@11800a0000000 {
+			interface@0 {
+				ethernet@0 {
+					phy-handle = <&phy4>;
+				};
+				ethernet@1 {
+					phy-handle = <&phy5>;
+				};
+				ethernet@2 {
+					phy-handle = <&phy6>;
+				};
+				ethernet@3 {
+					compatible = "cavium,octeon-3860-pip-port";
+					reg = <0x3>; /* Port */
+					local-mac-address = [ 00 00 00 00 00 00 ];
+					phy-handle = <&phy7>;
+				};
+			};
+		};
+	};
+
+	aliases {
+		pip = &pip;
+	};
+};
+
+/* Boot loader and its environment, needs the Intel CFI driver */
+&flash0 {
+	status = "disabled";
+};

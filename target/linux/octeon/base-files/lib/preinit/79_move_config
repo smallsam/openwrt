@@ -37,6 +37,11 @@ octeon_move_config() {
 		ubnt,edgerouter-6p)
 			move_config "/dev/mmcblk0p1" "vfat"
 			;;
+		cisco,ct2504)
+			. /lib/upgrade/cisco-ct2504.sh
+			move_config "$(ct2504_get_disk $CT2504_IMAGES_PART)" \
+				$CT2504_IMAGES_FSTYPE
+			;;
 		cisco,vedge1000)
 			# Copy from the internal USB disk's first partition.
 			# It is resolved from the device path to not be dependent on which

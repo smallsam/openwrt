@@ -11,6 +11,9 @@ do_sysinfo_octeon() {
 	case "$of_machine" in
 	"cisco,vedge1000"*)
 		return 0
+		;;
+	"cisco,ct2504"*)
+		return 0
 	esac
 
 	case "$machine" in

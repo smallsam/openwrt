@@ -1,0 +1,101 @@
+From: Sam Richards <me@smallsam.com>
+Subject: [PATCH] hwmon: (tps23861) add an optional operating mode property
+
+The controller powers up with all ports in shutdown mode on some boards
+(the Cisco AIR-CT2504-K9 for example, where the vendor firmware sets
+auto mode at boot). Let the device tree request an operating mode,
+which is applied to all ports together with detection and
+classification being enabled.
+
+Signed-off-by: Sam Richards <me@smallsam.com>
+---
+diff -urN a/Documentation/devicetree/bindings/hwmon/ti,tps23861.yaml b/Documentation/devicetree/bindings/hwmon/ti,tps23861.yaml
+--- a/Documentation/devicetree/bindings/hwmon/ti,tps23861.yaml
++++ b/Documentation/devicetree/bindings/hwmon/ti,tps23861.yaml
+@@ -30,6 +30,16 @@
+     minimum: 250000
+     maximum: 255000
+ 
++  ti,operating-mode:
++    description: |
++      Operating mode to set for all ports. Use it if the controller does not
++      come out of reset in the mode the system needs; ports are left as they
++      are if the property is missing.
++    enum:
++      - manual
++      - semi-auto
++      - auto
++
+ required:
+   - compatible
+   - reg
+diff -urN a/drivers/hwmon/tps23861.c b/drivers/hwmon/tps23861.c
+--- a/drivers/hwmon/tps23861.c
++++ b/drivers/hwmon/tps23861.c
+@@ -95,6 +95,8 @@
+ #define OPERATING_MODE_PORT_3_MASK	GENMASK(5, 4)
+ #define OPERATING_MODE_PORT_4_MASK	GENMASK(7, 6)
+ 
++#define DETECT_CLASS_ENABLE		0x14
++#define DETECT_CLASS_ENABLE_ALL		0xff
+ #define DETECT_CLASS_RESTART		0x18
+ #define POWER_ENABLE			0x19
+ #define TPS23861_NUM_PORTS		4
+@@ -502,12 +504,42 @@
+ 
+ DEFINE_SHOW_ATTRIBUTE(tps23861_port_status);
+ 
++static int tps23861_set_operating_mode(struct tps23861_data *data,
++				       const char *mode)
++{
++	unsigned int regval;
++	int err;
++
++	if (!strcmp(mode, "manual"))
++		regval = OPERATING_MODE_MANUAL;
++	else if (!strcmp(mode, "semi-auto"))
++		regval = OPERATING_MODE_SEMI;
++	else if (!strcmp(mode, "auto"))
++		regval = OPERATING_MODE_AUTO;
++	else
++		return -EINVAL;
++
++	/* the same mode for all four ports */
++	regval *= FIELD_PREP(OPERATING_MODE_PORT_1_MASK, 1) |
++		  FIELD_PREP(OPERATING_MODE_PORT_2_MASK, 1) |
++		  FIELD_PREP(OPERATING_MODE_PORT_3_MASK, 1) |
++		  FIELD_PREP(OPERATING_MODE_PORT_4_MASK, 1);
++	err = regmap_write(data->regmap, OPERATING_MODE, regval);
++	if (err < 0)
++		return err;
++
++	return regmap_write(data->regmap, DETECT_CLASS_ENABLE,
++			    DETECT_CLASS_ENABLE_ALL);
++}
++
+ static int tps23861_probe(struct i2c_client *client)
+ {
+ 	struct device *dev = &client->dev;
+ 	struct tps23861_data *data;
+ 	struct device *hwmon_dev;
++	const char *operating_mode;
+ 	u32 shunt_resistor;
++	int err;
+ 
+ 	data = devm_kzalloc(dev, sizeof(*data), GFP_KERNEL);
+ 	if (!data)
+@@ -536,6 +568,14 @@
+ 				TPS23861_GENERAL_MASK_1,
+ 				TPS23861_CURRENT_SHUNT_MASK);
+ 
++	if (!of_property_read_string(dev->of_node, "ti,operating-mode",
++				     &operating_mode)) {
++		err = tps23861_set_operating_mode(data, operating_mode);
++		if (err < 0)
++			return dev_err_probe(dev, err,
++					     "failed to set operating mode\n");
++	}
++
+ 	hwmon_dev = devm_hwmon_device_register_with_info(dev, client->name,
+ 							 data, &tps23861_chip_info,
+ 							 NULL);

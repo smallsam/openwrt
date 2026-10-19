@@ -14,7 +14,34 @@ define Build/strip-kernel
 	$(TARGET_CROSS)strip -R .notes $@ -o $@.stripped && mv $@.stripped $@
 endef
 
+define Build/cisco-rtos-image
+	python3 $(CURDIR)/cisco-rtos-image.py $@ $@.new "$(VERSION_DIST) $(VERSION_NUMBER)"
+	mv $@.new $@
+endef
+
 DTS_DIR := $(DTS_DIR)/cavium-octeon
+
+define Cisco/ct2504-fp
+	$(TARGET_CROSS)as -march=octeon -mabi=eabi -EB -o $(1).o $(CURDIR)/cisco-ct2504-fp.S
+	$(TARGET_CROSS)ld -m elf32btsmip -z max-page-size=8 -z noseparate-code \
+		--build-id=none -T $(CURDIR)/cisco-ct2504-fp.ld -o $(1) $(1).o
+	rm -f $(1).o
+endef
+
+define Build/cisco-ct2504-fp
+	$(call Cisco/ct2504-fp,$@)
+endef
+
+# the boot loader starts cavium_main.{pri,bak} next to the kernel, so
+# sysupgrade has to install it too
+define Build/cisco-ct2504-fp-tar
+	$(call Cisco/ct2504-fp,$@.fp)
+	tar --owner=0 --group=0 --numeric-owner \
+		$(if $(SOURCE_DATE_EPOCH),--mtime=@$(SOURCE_DATE_EPOCH)) \
+		-rf $@ --transform 's|.*|sysupgrade-$(BOARD_NAME)/cavium_main|' \
+		-C $(dir $@) $(notdir $@).fp
+	rm -f $@.fp
+endef
 
 define Device/Default
   PROFILES = Default $$(DEVICE_NAME)
@@ -98,6 +125,21 @@ define Device/ubnt_unifi-usg
   SUPPORTED_DEVICES += ubnt,usg
 endef
 TARGET_DEVICES += ubnt_unifi-usg
+
+define Device/cisco_ct2504
+  DEVICE_VENDOR := Cisco
+  DEVICE_MODEL := AIR-CT2504-K9
+  DEVICE_DTS := cn5230_cisco_ct2504
+  BOARD_NAME := cisco,ct2504
+  DEVICE_PACKAGES := kmod-hwmon-tps23861
+  KERNEL := kernel-bin | patch-cmdline | append-dtb-to-elf | cisco-rtos-image
+  IMAGES += cavium_main.elf
+  IMAGE/cavium_main.elf := cisco-ct2504-fp
+  IMAGE/sysupgrade.tar/squashfs := append-rootfs | pad-extra 128k | sysupgrade-tar rootfs=$$$$@ | cisco-ct2504-fp-tar
+  KERNEL_DEPENDS := $$(wildcard $(DTS_DIR)/$(DEVICE_DTS).dts)
+  CMDLINE := console=ttyS0,9600n8 root=/dev/sda4 rootfstype=squashfs,ext4 rootwait
+endef
+TARGET_DEVICES += cisco_ct2504
 
 define Device/cisco_vedge1000
   DEVICE_VENDOR := Cisco Viptela

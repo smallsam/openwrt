@@ -59,6 +59,10 @@ platform_copy_config() {
 	ubnt,edgerouter-6p)
 		platform_copy_config_helper /dev/mmcblk0p1 vfat
 		;;
+	cisco,ct2504)
+		platform_copy_config_helper "$(ct2504_get_disk $CT2504_IMAGES_PART)" \
+			$CT2504_IMAGES_FSTYPE
+		;;
 	cisco,vedge1000)
 		platform_copy_config_helper "$(platform_get_n821_disk 1)" ext2
 		;;
@@ -121,6 +125,11 @@ platform_do_upgrade() {
 	local rootfs="$(platform_get_rootfs)"
 	local kernel=
 
+	if [ "${board}" = "cisco,ct2504" ]; then
+		ct2504_do_upgrade "$tar_file"
+		return
+	fi
+
 	if [ ! -b "${rootfs}" ] && [ "${board}" = "cisco,vedge1000" ]; then
 		# Default to the built-in USB disk for N821
 		rootfs="$(platform_get_n821_disk 2)"
@@ -166,10 +175,16 @@ platform_check_image() {
 	ubnt,edgerouter-6p | \
 	ubnt,erlite | \
 	ubnt,usg | \
+	cisco,ct2504 | \
 	cisco,vedge1000)
 		local kernel_length=$(tar xf $tar_file $board_dir/kernel -O | wc -c 2> /dev/null)
 		local rootfs_length=$(tar xf $tar_file $board_dir/root -O | wc -c 2> /dev/null)
 		[ "$kernel_length" = 0 -o "$rootfs_length" = 0 ] && {
+			echo "The upgrade image is corrupt."
+			return 1
+		}
+		[ "$board" = "cisco,ct2504" ] &&
+			[ "$(tar xf $tar_file $board_dir/cavium_main -O | wc -c)" = 0 ] && {
 			echo "The upgrade image is corrupt."
 			return 1
 		}
